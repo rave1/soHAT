@@ -7,6 +7,7 @@ import rp2
 import sys
 from config import SSID, PASSWORD
 import requests
+import json
 
 VREF = 3.3
 ADC_RES = 65535
@@ -17,19 +18,34 @@ adc_hum = ADC(Pin(26))
 def connect_to_wifi():
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
-    wlan.connect(SSID, PASSWORD)
-    while not wlan.isconnected():
-        if rp2.bootsel_button() == 1:
-            sys.exit()
-        print("Waiting for connection...")
-    ip = wlan.ifconfig()[0]
-    print(f"Connected on {ip}")
-    return ip
+    if not wlan.isconnected():
+        print("Connecting to Wi-Fi...")
+        wlan.connect(SSID, PASSWORD)
+        retry = 0
+        while not wlan.isconnected():
+            sleep(1)
+            retry += 1
+            print("Waiting for connection...", retry)
+            if rp2.bootsel_button() == 1:
+                print("Aborting connection.")
+                sys.exit()
+            if retry > 20:  # po 20 sek. spróbuj ponownie od zera
+                wlan.disconnect()
+                wlan.connect(SSID, PASSWORD)
+                retry = 0
+    print("Connected on:", wlan.ifconfig()[0])
+    return wlan
 
 
-connect_to_wifi()
+wlan = connect_to_wifi()
+
+headers = {"Content-Type": "application/json"}
 
 while True:
+    if not wlan.isconnected():
+        print("Wi-Fi lost, reconnecting...")
+        wlan = connect_to_wifi()
+
     raw_temp = adc_temp.read_u16()
     raw_hum = adc_hum.read_u16()
 
@@ -37,9 +53,16 @@ while True:
     volt_hum = (raw_hum / ADC_RES) * VREF
 
     Tc = -66.875 + 72.917 * volt_temp
-
     RH = -12.5 + 41.667 * volt_hum
 
-    requests.post(url="http://192.168.123/temp", data={"temp": Tc, "humidity": RH})
-
+    payload = {"temp": Tc, "humidity": RH}
+    url = "http://192.168.49/temp"
+    try:
+        r = requests.post(
+            "http://192.168.49/temp", data=json.dumps(payload), headers=headers
+        )
+        print("Sent JSON:", payload, "→", r.status_code)
+        r.close()
+    except Exception as e:
+        print("Request failed:", e)
     sleep(2)
