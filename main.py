@@ -13,6 +13,7 @@ VREF = 3.3
 ADC_RES = 65535
 adc_temp = ADC(Pin(27))
 adc_hum = ADC(Pin(26))
+led_pin = Pin("LED", Pin.OUT)
 
 
 def connect_to_wifi():
@@ -34,6 +35,9 @@ def connect_to_wifi():
                 wlan.connect(SSID, PASSWORD)
                 retry = 0
     print("Connected on:", wlan.ifconfig()[0])
+    for i in range(6):
+        led_pin.value(not led_pin.value())
+        sleep(0.1)
     return wlan
 
 
@@ -56,10 +60,10 @@ while True:
     RH = -12.5 + 41.667 * volt_hum
 
     payload = {"temp": Tc, "humidity": RH}
-    url = "http://192.168.49/temp"
+    url = "http://192.168.123:8000/temp"
     try:
         r = requests.post(
-            "http://192.168.49/temp", data=json.dumps(payload), headers=headers
+            url, data=json.dumps(payload), headers=headers
         )
         print("Sent JSON:", payload, "→", r.status_code)
         r.close()
